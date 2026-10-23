@@ -1,8 +1,21 @@
 out/
+bin/
 *.class
+build/
+dist/
+
+# Eclipse
+.project
+.classpath
+.settings/
+.metadata/
+
+# Claude Code
+.claude/
+settings.local.json
+
+# Other IDEs
 .idea/
 *.iml
 .vscode/
 nbproject/private/
-build/
-dist/
