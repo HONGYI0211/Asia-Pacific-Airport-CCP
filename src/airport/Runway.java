@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class Runway {
 
-    private final Semaphore permit = new Semaphore(1);
+    private final Semaphore permit = new Semaphore(1);   // binary semaphore: one plane at a time
 
     // Collision detector, updated by the plane threads themselves.
     private final AtomicInteger aircraftOnRunway = new AtomicInteger(0);

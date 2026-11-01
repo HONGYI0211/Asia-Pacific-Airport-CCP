@@ -49,6 +49,7 @@ public final class SimConfig {
     public static final int EMERGENCY_FUEL_PERCENT = 5;
     /** A plane at or below this fuel level declares an emergency. */
     public static final int LOW_FUEL_THRESHOLD = 10;
+    /** Normal planes arrive with a random fuel level in this range. */
     public static final int MIN_NORMAL_FUEL_PERCENT = 30;
     public static final int MAX_NORMAL_FUEL_PERCENT = 60;
 
@@ -69,6 +70,7 @@ public final class SimConfig {
      */
     public static final int TIME_PER_PASSENGER = 80;
 
+    /** Cleaning and resupply each take a random time between these limits. */
     public static final int CLEANING_MIN_TIME = 2000;
     public static final int CLEANING_MAX_TIME = 2500;
     public static final int RESUPPLY_MIN_TIME = 2000;

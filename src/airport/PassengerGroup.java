@@ -27,6 +27,7 @@ public class PassengerGroup implements Runnable {
         this.stats = stats;
     }
 
+    /** Runs on the passenger thread: the old group gets off, then the new group boards. */
     @Override
     public void run() {
         String who = plane + "'s Passengers";

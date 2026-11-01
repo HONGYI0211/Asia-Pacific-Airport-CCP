@@ -41,6 +41,7 @@ public class Plane implements Runnable {
         this.stats = stats;
     }
 
+    /** Runs on the plane thread: the three stages of one visit, in order. */
     @Override
     public void run() {
         try {
@@ -102,13 +103,13 @@ public class Plane implements Runnable {
         // ... while this plane thread asks the (single) refuel truck for fuel.
         Log.say(name + ": Fuel is at " + fuelLevel + "%. Asking for the refuel truck.");
         refuelTruck.requestRefuel(this, gate);         // blocks until the truck has served us
-        fuelLevel = 100;
+        fuelLevel = 100;                               // only this thread writes it, not the truck
         Log.say(name + ": Fuel tank is full (100%).");
 
         // Wait for the other two concurrent activities to finish.
         passengerThread.join();
         crewThread.join();
-        passengersOnDeparture = passengers.getBoardedPassengers();
+        passengersOnDeparture = passengers.getBoardedPassengers();   // safe to read after join()
 
         Log.say(name + ": All ground work is done. " + passengersOnDeparture
                 + " passengers on board, ready to leave.");

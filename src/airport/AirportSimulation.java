@@ -20,6 +20,7 @@ import java.util.List;
  */
 public class AirportSimulation {
 
+    /** The main thread builds the airport, then only starts, joins and stops the other threads. */
     public static void main(String[] args) throws InterruptedException {
         Thread.currentThread().setName("Main");
         Log.say("Main: ========== STARTED: Asia Pacific Airport simulation==========");

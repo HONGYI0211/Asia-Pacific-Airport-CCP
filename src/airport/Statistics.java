@@ -23,7 +23,7 @@ public class Statistics {
     private final AtomicInteger planesOnGround = new AtomicInteger(0);
     private final AtomicInteger maxPlanesOnGround = new AtomicInteger(0);
 
-    private final List<FlightRecord> flights = new ArrayList<FlightRecord>();
+    private final List<FlightRecord> flights = new ArrayList<FlightRecord>();   // guarded by this object's monitor
 
     public void addPassengersDisembarked(int count) {
         passengersDisembarked.addAndGet(count);
@@ -59,6 +59,7 @@ public class Statistics {
         planesOnGround.addAndGet(-1);
     }
 
+    /** Called by each plane thread just before it leaves. */
     public synchronized void recordFlight(FlightRecord record) {
         flights.add(record);
     }
