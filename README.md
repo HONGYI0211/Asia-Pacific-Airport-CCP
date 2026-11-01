@@ -16,8 +16,8 @@ A run takes 30–35 seconds (the limit is 60). Every log line shows the elapsed 
 **thread that printed it**, so you can see that no thread acts for another:
 
 ```
-[ 11.84s] [ATC               ] ATC: EMERGENCY landing permission GRANTED for Plane-6 (waited 7.29s). Runway is clear.
-[ 11.84s] [Plane-6           ] Plane-6: Landing on the runway.
+[ 11.84s] [ATC               ] ATC: EMERGENCY landing APPROVED for Plane-6 (waited 7.29s). The runway is free.
+[ 11.84s] [Plane-6           ] Plane-6: Coming down onto the runway.
 ```
 
 ## Threads

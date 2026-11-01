@@ -22,7 +22,7 @@ public class AirportSimulation {
 
     public static void main(String[] args) throws InterruptedException {
         Thread.currentThread().setName("Main");
-        Log.say("Main: ========== Asia Pacific Airport simulation starting ==========");
+        Log.say("Main: ========== STARTED: Asia Pacific Airport simulation==========");
 
         // ---- Build the airport ----
         Statistics stats = new Statistics();
@@ -67,7 +67,7 @@ public class AirportSimulation {
         for (Thread planeThread : planeThreads) {
             planeThread.join();
         }
-        Log.say("Main: All planes have left the airport. Closing down services.");
+        Log.say("Main: Every plane has flown away. Shutting down the truck and the tower.");
 
         // ---- Stop the truck, then let the ATC do its sanity checks and statistics ----
         refuelTruck.shutdown();
@@ -75,6 +75,6 @@ public class AirportSimulation {
         atc.shutdown();
         atcThread.join();
 
-        Log.say("Main: ========== Simulation finished in " + Log.seconds(Log.elapsedMillis()) + " ==========");
+        Log.say("Main: ========== FINISHED: Simulation took " + Log.seconds(Log.elapsedMillis()) + " ==========");
     }
 }

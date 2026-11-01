@@ -78,7 +78,7 @@ public class RefuelTruck implements Runnable {
     /** The truck thread's life: wait for a request, serve it, repeat. */
     @Override
     public void run() {
-        Log.say("Refuel Truck: On standby at the fuel depot.");
+        Log.say("Refuel Truck: Parked at the fuel depot, ready for requests.");
         try {
             while (true) {
                 RefuelJob job;
@@ -97,18 +97,18 @@ public class RefuelTruck implements Runnable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        Log.say("Refuel Truck: No more requests. Returning to the depot.");
+        Log.say("Refuel Truck: All jobs done. Going back to the depot.");
     }
 
     private void serve(RefuelJob job) throws InterruptedException {
-        Log.say("Refuel Truck: Driving to " + job.gate + " to refuel " + job.planeName + ".");
+        Log.say("Refuel Truck: On the way to " + job.gate + " for " + job.planeName + ".");
         Thread.sleep(SimConfig.TRUCK_DRIVE_TIME);
 
-        Log.say("Refuel Truck: Refuelling " + job.planeName + " at " + job.gate
-                + " (" + job.fuelBefore + "% -> 100%).");
+        Log.say("Refuel Truck: Filling up " + job.planeName + " at " + job.gate
+                + " (" + job.fuelBefore + "% to 100%).");
         Thread.sleep((100 - job.fuelBefore) * SimConfig.REFUEL_TIME_PER_PERCENT);
 
-        Log.say("Refuel Truck: Finished refuelling " + job.planeName + ".");
+        Log.say("Refuel Truck: " + job.planeName + " is full. Job done.");
         stats.refuelCompleted();
         job.markDone();
     }

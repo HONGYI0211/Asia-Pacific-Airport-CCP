@@ -49,7 +49,7 @@ public class Plane implements Runnable {
             departAndTakeOff();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            Log.say(name + ": Interrupted - flight aborted.");
+            Log.say(name + ": Stopped early, flight cancelled.");
         }
     }
 
@@ -59,26 +59,26 @@ public class Plane implements Runnable {
 
     private void approachAndLand() throws InterruptedException {
         if (fuelEmergency) {
-            Log.say(name + ": MAYDAY MAYDAY MAYDAY! Fuel critically low (" + fuelLevel
-                    + "%). Requesting EMERGENCY landing!");
+            Log.say(name + ": EMERGENCY STATUS TRIGGERED! Only " + fuelLevel
+                    + "% fuel left. Asking ATC for an EMERGENCY landing!");
         } else {
-            Log.say(name + ": Approaching with " + passengersOnArrival + " passengers. Requesting landing.");
+            Log.say(name + ": Near the airport with " + passengersOnArrival + " passengers. Asking ATC to land.");
         }
 
         long askedAt = Log.elapsedMillis();
         gate = atc.requestLanding(this);              // blocks while circling, until the ATC clears us
         landingWait = Log.elapsedMillis() - askedAt;
 
-        Log.say(name + ": Landing on the runway.");
+        Log.say(name + ": Coming down onto the runway.");
         runway.enter();
         stats.planeEnteredGround();
         touchdownTime = Log.elapsedMillis();
         Thread.sleep(SimConfig.LANDING_TIME);
 
-        Log.say(name + ": Landed. Vacating the runway.");
+        Log.say(name + ": Safely landed. Leaving the runway now.");
         atc.reportRunwayVacated();                    // hands the runway back to the ATC
 
-        Log.say(name + ": Coasting to " + gate + ".");
+        Log.say(name + ": Rolling slowly to " + gate + ".");
         Thread.sleep(SimConfig.COAST_TIME);
     }
 
@@ -88,9 +88,9 @@ public class Plane implements Runnable {
 
     private void turnaroundAtGate() throws InterruptedException {
         gate.dock(this);
-        Log.say(name + ": Docking at " + gate + ".");
+        Log.say(name + ": Reached " + gate + ". Docking now.");
         Thread.sleep(SimConfig.DOCKING_TIME);
-        Log.say(name + ": Docked at " + gate + ". Starting ground services.");
+        Log.say(name + ": Docked at " + gate + ". Ground work can start.");
 
         // Passengers and the cleaning crew each get their own thread ...
         PassengerGroup passengers = new PassengerGroup(this, gate, passengersOnArrival, stats);
@@ -100,18 +100,18 @@ public class Plane implements Runnable {
         crewThread.start();
 
         // ... while this plane thread asks the (single) refuel truck for fuel.
-        Log.say(name + ": Requesting the refuel truck (fuel at " + fuelLevel + "%).");
+        Log.say(name + ": Fuel is at " + fuelLevel + "%. Asking for the refuel truck.");
         refuelTruck.requestRefuel(this, gate);         // blocks until the truck has served us
         fuelLevel = 100;
-        Log.say(name + ": Refuelling complete. Fuel at 100%.");
+        Log.say(name + ": Fuel tank is full (100%).");
 
         // Wait for the other two concurrent activities to finish.
         passengerThread.join();
         crewThread.join();
         passengersOnDeparture = passengers.getBoardedPassengers();
 
-        Log.say(name + ": All ground services complete. " + passengersOnDeparture
-                + " passengers on board, ready to depart.");
+        Log.say(name + ": All ground work is done. " + passengersOnDeparture
+                + " passengers on board, ready to leave.");
     }
 
     // ------------------------------------------------------------------
@@ -119,24 +119,24 @@ public class Plane implements Runnable {
     // ------------------------------------------------------------------
 
     private void departAndTakeOff() throws InterruptedException {
-        Log.say(name + ": Undocking from " + gate + ".");
+        Log.say(name + ": Undocking and moving away from " + gate + ".");
         Thread.sleep(SimConfig.UNDOCKING_TIME);
         gate.undock(this);
         atc.reportGateReleased();
 
-        Log.say(name + ": Coasting to the runway.");
+        Log.say(name + ": Rolling slowly to the runway.");
         Thread.sleep(SimConfig.COAST_TIME);
 
-        Log.say(name + ": Requesting take-off.");
+        Log.say(name + ": At the runway. Asking ATC to take off.");
         long askedAt = Log.elapsedMillis();
         atc.requestTakeoff(this);                      // blocks until the runway is ours
         takeoffWait = Log.elapsedMillis() - askedAt;
 
-        Log.say(name + ": Taking off.");
+        Log.say(name + ": Speeding down the runway to take off.");
         runway.enter();
         Thread.sleep(SimConfig.TAKEOFF_TIME);
         stats.planeLeftGround();
-        Log.say(name + ": Airborne. Leaving Asia Pacific Airport. Goodbye!");
+        Log.say(name + ": In the air now. Goodbye, Asia Pacific Airport!");
 
         stats.recordFlight(new FlightRecord(name, fuelEmergency, gate.toString(),
                 landingWait, takeoffWait, passengersOnArrival, passengersOnDeparture,

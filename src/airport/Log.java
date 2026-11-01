@@ -7,7 +7,7 @@ import java.util.Locale;
  *
  * Every line shows the elapsed time and the name of the thread that printed it, e.g.
  *
- *   [  3.51s] [ATC               ] ATC: Landing permission GRANTED for Plane-1.
+ *   [  3.51s] [ATC               ] ATC: Landing APPROVED for Plane-1.
  *
  * This lets us prove that no thread ever "acts for" another one: ATC messages
  * always come from the ATC thread, Plane-1 messages from the Plane-1 thread, and

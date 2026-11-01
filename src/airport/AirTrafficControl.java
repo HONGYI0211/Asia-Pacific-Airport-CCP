@@ -76,7 +76,7 @@ public class AirTrafficControl implements Runnable {
                 // object, so waking up without clearance means the time simply ran out.
                 wait(SimConfig.HOLDING_REPORT_INTERVAL);
                 if (!granted) {
-                    Log.say(plane + ": Still circling in the holding pattern, waiting for landing clearance...");
+                    Log.say(plane + ": Still flying in circles, waiting for ATC to say it can land...");
                 }
             }
             return gate;
@@ -188,8 +188,8 @@ public class AirTrafficControl implements Runnable {
 
     @Override
     public void run() {
-        Log.say("ATC: Asia Pacific Airport tower online. 1 runway, " + gates.length
-                + " gates, max " + SimConfig.GROUND_CAPACITY + " aircraft on the ground.");
+        Log.say("ATC: Tower is open. This airport has 1 runway, " + gates.length
+                + " gates and room for " + SimConfig.GROUND_CAPACITY + " planes on the ground.");
         try {
             synchronized (this) {
                 while (true) {
@@ -250,9 +250,9 @@ public class AirTrafficControl implements Runnable {
         }
         landingQueue.add(position, request);
 
-        Log.say("ATC: MAYDAY acknowledged for " + request.plane + "! Emergency priority given"
-                + (overtaken.isEmpty() ? "." : " - moved ahead of " + String.join(", ", overtaken)
-                + " in the landing queue."));
+        Log.say("ATC: EMERGENCY STATUS acknowledged for " + request.plane + "! Giving it priority"
+                + (overtaken.isEmpty() ? "." : ", so it goes ahead of " + String.join(", ", overtaken)
+                + " in the landing line."));
     }
 
     /** Clears at most one plane for the runway, following the priority rules. */
@@ -295,9 +295,9 @@ public class AirTrafficControl implements Runnable {
 
         long waited = Log.elapsedMillis() - request.requestedAt;
         String type = request.plane.isFuelEmergency() ? "EMERGENCY landing" : "Landing";
-        Log.say("ATC: " + type + " permission GRANTED for " + request.plane
-                + " (waited " + Log.seconds(waited) + "). Runway is clear.");
-        Log.say("ATC: " + gate + " assigned to " + request.plane + ". Aircraft on the ground: "
+        Log.say("ATC: " + type + " APPROVED for " + request.plane
+                + " (waited " + Log.seconds(waited) + "). The runway is free.");
+        Log.say("ATC: " + request.plane + ", please go to " + gate + " after landing. Planes on the ground: "
                 + aircraftOnGround + "/" + SimConfig.GROUND_CAPACITY + ".");
 
         request.grant(gate);                          // wake exactly this plane
@@ -308,34 +308,34 @@ public class AirTrafficControl implements Runnable {
         clearedForRunway = request.plane;
 
         long waited = Log.elapsedMillis() - request.requestedAt;
-        Log.say("ATC: Take-off GRANTED for " + request.plane + " (waited " + Log.seconds(waited)
-                + "). Runway is free.");
+        Log.say("ATC: Take-off APPROVED for " + request.plane + " (waited " + Log.seconds(waited)
+                + "). The runway is free.");
 
         request.grant(null);
     }
 
     private void tellToHold(Request request) {
         if (request.kind == Kind.TAKEOFF) {
-            Log.say("ATC: " + request.plane + ", hold short of the runway - runway in use by "
-                    + clearedForRunway + ".");
+            Log.say("ATC: " + request.plane + ", please wait before the runway. "
+                    + clearedForRunway + " is using it.");
             return;
         }
-        Log.say("ATC: Landing permission DENIED for " + request.plane + " - " + reasonCannotLand(request)
-                + ". Join the holding pattern, queue position #" + (landingQueue.indexOf(request) + 1) + ".");
+        Log.say("ATC: Landing DENIED for " + request.plane + " because " + reasonCannotLand(request)
+                + ". Keep circling, you are number " + (landingQueue.indexOf(request) + 1) + " in line.");
     }
 
     private String reasonCannotLand(Request request) {
         if (aircraftOnGround == SimConfig.GROUND_CAPACITY) {
-            return "airport full (" + SimConfig.GROUND_CAPACITY + "/" + SimConfig.GROUND_CAPACITY
-                    + " aircraft on the ground)";
+            return "the airport is full (" + SimConfig.GROUND_CAPACITY + "/" + SimConfig.GROUND_CAPACITY
+                    + " planes on the ground)";
         }
         if (clearedForRunway != null) {
-            return "runway in use by " + clearedForRunway;
+            return clearedForRunway + " is using the runway";
         }
         if (landingQueue.indexOf(request) > 0) {
-            return "other aircraft are ahead in the landing queue";
+            return "other planes are ahead in the line";
         }
-        return "departing traffic has priority";
+        return "a plane taking off goes first";
     }
 
     // ==================================================================
@@ -358,60 +358,61 @@ public class AirTrafficControl implements Runnable {
                 }
             }
 
-            Log.say("ATC: ===================== END OF DAY REPORT =====================");
+            Log.say("ATC: =================== FINAL AIRPORT REPORT ===================");
             Log.say("ATC: --------------------- Sanity checks -----------------------");
             boolean allOk = true;
             for (Gate gate : gates) {
                 allOk &= check(gate.isFree(), gate + " is empty.");
             }
-            allOk &= check(clearedForRunway == null && runway.getAircraftOnRunway() == 0, "Runway is clear.");
+            allOk &= check(clearedForRunway == null && runway.getAircraftOnRunway() == 0,
+                    "No plane is left on the runway.");
             allOk &= check(aircraftOnGround == 0 && stats.getPlanesOnGround() == 0,
-                    "No aircraft left on the airport grounds (" + (SimConfig.GROUND_CAPACITY - aircraftOnGround)
-                            + "/" + SimConfig.GROUND_CAPACITY + " ground slots free).");
+                    "No planes are left on the airport grounds (" + (SimConfig.GROUND_CAPACITY - aircraftOnGround)
+                            + "/" + SimConfig.GROUND_CAPACITY + " spaces free).");
             allOk &= check(incoming.isEmpty() && landingQueue.isEmpty() && takeoffQueue.isEmpty(),
-                    "Landing and take-off queues are empty.");
-            allOk &= check(!refuelTruck.hasPendingRequests(), "Refuel truck has no pending requests.");
+                    "No plane is still waiting to land or take off.");
+            allOk &= check(!refuelTruck.hasPendingRequests(), "The refuel truck has no jobs left.");
             allOk &= check(served == SimConfig.TOTAL_PLANES,
-                    "All planes served (" + served + "/" + SimConfig.TOTAL_PLANES + ").");
+                    "Every plane was handled (" + served + "/" + SimConfig.TOTAL_PLANES + ").");
             allOk &= check(stats.getMaxPlanesOnGround() <= SimConfig.GROUND_CAPACITY,
-                    "Max aircraft on the airport grounds at any time: " + stats.getMaxPlanesOnGround()
+                    "Most planes on the grounds at one time: " + stats.getMaxPlanesOnGround()
                             + " (limit " + SimConfig.GROUND_CAPACITY + ").");
             allOk &= check(runway.getMaxAircraftOnRunway() <= 1,
-                    "Max aircraft on the runway at any time: " + runway.getMaxAircraftOnRunway()
-                            + " (limit 1) - no runway collisions.");
+                    "Most planes on the runway at one time: " + runway.getMaxAircraftOnRunway()
+                            + " (limit 1), so no collisions.");
             allOk &= check(runway.getMovements() == 2 * served,
-                    "Runway movements: " + runway.getMovements() + " (" + served + " landings + "
+                    "Runway used " + runway.getMovements() + " times (" + served + " landings + "
                             + served + " take-offs).");
             allOk &= check(stats.getRefuelsCompleted() == served,
-                    "Every plane refuelled exactly once (" + stats.getRefuelsCompleted() + " refuels).");
+                    "Each plane got fuel exactly once (" + stats.getRefuelsCompleted() + " refuels).");
             allOk &= check(sumDisembarked == stats.getPassengersDisembarked() && sumBoarded == stats.getPassengersBoarded(),
-                    "Passenger counters consistent - no lost updates (atomic counters match per-plane totals).");
-            Log.say("ATC: Overall: " + (allOk ? "ALL SANITY CHECKS PASSED" : "SOME SANITY CHECKS FAILED"));
+                    "Passenger totals add up, so no counts were lost.");
+            Log.say("ATC: Result: " + (allOk ? "ALL SANITY CHECKS PASSED" : "SOME SANITY CHECKS FAILED"));
 
             Log.say("ATC: ------------------------ Statistics -----------------------");
             stat("Planes served", String.valueOf(served));
             stat("Emergency landings", emergencies.size()
                     + (emergencies.isEmpty() ? "" : " (" + String.join(", ", emergencies) + ")"));
-            stat("Passengers disembarked", String.valueOf(stats.getPassengersDisembarked()));
+            stat("Passengers got off", String.valueOf(stats.getPassengersDisembarked()));
             stat("Passengers boarded", String.valueOf(stats.getPassengersBoarded()));
-            stat("Refuels completed", String.valueOf(stats.getRefuelsCompleted()));
-            reportWaitingTimes("Waiting time to land", flights, true);
-            reportWaitingTimes("Waiting time to take off", flights, false);
+            stat("Refuels done", String.valueOf(stats.getRefuelsCompleted()));
+            reportWaitingTimes("Wait to land", flights, true);
+            reportWaitingTimes("Wait to take off", flights, false);
             for (Gate gate : gates) {
-                stat(gate + " served", gate.getPlanesServed() + " plane(s)");
+                stat("Planes at " + gate, String.valueOf(gate.getPlanesServed()));
             }
 
-            Log.say("ATC: ------------------------ Per plane ------------------------");
-            Log.say(String.format(Locale.ROOT, "ATC: %-8s %-7s %-9s %9s %9s %5s %5s %10s",
-                    "Plane", "Gate", "Type", "LandWait", "T/O Wait", "Off", "On", "AtAirport"));
+            Log.say("ATC: ------------------------ Each plane -----------------------");
+            Log.say(String.format(Locale.ROOT, "ATC: %-8s %-7s %-9s %9s %12s %7s %6s %9s",
+                    "Plane", "Gate", "Type", "Land Wait", "Takeoff Wait", "Got Off", "Got On", "On Ground"));
             for (FlightRecord f : flights) {
-                Log.say(String.format(Locale.ROOT, "ATC: %-8s %-7s %-9s %9s %9s %5d %5d %10s",
+                Log.say(String.format(Locale.ROOT, "ATC: %-8s %-7s %-9s %9s %12s %7d %6d %9s",
                         f.planeName, f.gateName, f.emergency ? "EMERGENCY" : "normal",
                         Log.seconds(f.landingWaitMillis), Log.seconds(f.takeoffWaitMillis),
                         f.passengersDisembarked, f.passengersBoarded, Log.seconds(f.timeOnGroundMillis)));
             }
             Log.say("ATC: ===========================================================");
-            Log.say("ATC: Tower closing. Good night!");
+            Log.say("ATC: The tower is now closed.");
         }
     }
 
@@ -443,7 +444,7 @@ public class AirTrafficControl implements Runnable {
         }
         long minWait = landing ? min.landingWaitMillis : min.takeoffWaitMillis;
         long maxWait = landing ? max.landingWaitMillis : max.takeoffWaitMillis;
-        stat(label, String.format(Locale.ROOT, "min %s (%s) | avg %s | max %s (%s)",
+        stat(label, String.format(Locale.ROOT, "Minimum %s (%s) | Average %s | Maximum %s (%s)",
                 Log.seconds(minWait), min.planeName, Log.seconds(total / flights.size()),
                 Log.seconds(maxWait), max.planeName));
     }
