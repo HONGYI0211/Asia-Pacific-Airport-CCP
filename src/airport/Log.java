@@ -15,7 +15,7 @@ import java.util.Locale;
  */
 public final class Log {
 
-    private static final long START_NANOS = System.nanoTime();
+    private static final long START_NANOS = System.nanoTime();   // time zero for every log line
 
     private Log() {
     }

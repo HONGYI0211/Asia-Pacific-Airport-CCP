@@ -20,7 +20,7 @@ public class RefuelTruck implements Runnable {
         final String planeName;
         final Gate gate;
         final int fuelBefore;
-        private boolean done = false;
+        private boolean done = false;    // guarded by this job's monitor
 
         RefuelJob(String planeName, Gate gate, int fuelBefore) {
             this.planeName = planeName;
@@ -71,6 +71,7 @@ public class RefuelTruck implements Runnable {
         notifyAll();
     }
 
+    /** Used by the ATC's sanity check at the end of the run. */
     public synchronized boolean hasPendingRequests() {
         return !jobs.isEmpty();
     }
@@ -100,6 +101,7 @@ public class RefuelTruck implements Runnable {
         Log.say("Refuel Truck: All jobs done. Going back to the depot.");
     }
 
+    /** Drives to the gate and refuels one plane. The truck thread holds no monitor here. */
     private void serve(RefuelJob job) throws InterruptedException {
         Log.say("Refuel Truck: On the way to " + job.gate + " for " + job.planeName + ".");
         Thread.sleep(SimConfig.TRUCK_DRIVE_TIME);

@@ -19,3 +19,6 @@ settings.local.json
 *.iml
 .vscode/
 nbproject/private/
+
+# Report (submitted separately from the code)
+report/

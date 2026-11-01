@@ -18,7 +18,7 @@ public class Gate {
 
     private Plane assignedPlane = null;   // reserved by the ATC when landing is granted
     private Plane dockedPlane = null;     // the plane physically at the gate
-    private int planesServed = 0;
+    private int planesServed = 0;         // number of planes that have used this gate
 
     public Gate(int number) {
         this.name = "Gate-" + number;

@@ -36,6 +36,7 @@ import java.util.concurrent.Semaphore;
  */
 public class AirTrafficControl implements Runnable {
 
+    /** What a plane is asking the tower for. */
     private enum Kind { LANDING, TAKEOFF }
 
     /** One radio call from a plane. The plane thread waits on this object until the tower answers. */
@@ -58,6 +59,7 @@ public class AirTrafficControl implements Runnable {
             notify();
         }
 
+        /** Called by the ATC thread to see which planes must be told to wait. */
         synchronized boolean isGranted() {
             return granted;
         }
@@ -90,8 +92,8 @@ public class AirTrafficControl implements Runnable {
     private Plane clearedForRunway = null;   // the plane allowed on the runway right now
     private int aircraftOnGround = 0;        // cleared to land and not yet airborne
     private int landingsCleared = 0;         // landing clearances given so far (never goes down)
-    private boolean stateChanged = false;
-    private boolean shutdownRequested = false;
+    private boolean stateChanged = false;    // set when the runway or a gate may have become free
+    private boolean shutdownRequested = false; // set by the main thread when every plane has left
 
     /** Max 3 aircraft on the airport grounds, including the runway. Each plane holds one permit. */
     private final Semaphore groundSlots = new Semaphore(SimConfig.GROUND_CAPACITY);
@@ -132,6 +134,10 @@ public class AirTrafficControl implements Runnable {
         request.awaitGrant();
     }
 
+    /**
+     * Puts the call in the radio queue and wakes the tower. It uses notifyAll() because
+     * the main thread can also be waiting on this monitor, in awaitAirportFull().
+     */
     private synchronized void radioCall(Request request) {
         incoming.addLast(request);
         notifyAll();
@@ -184,8 +190,11 @@ public class AirTrafficControl implements Runnable {
 
     // ==================================================================
     // The ATC thread
+    // enqueue(), dispatchRunway(), the grant methods and tellToHold() only
+    // run on this thread, inside the synchronized block in run().
     // ==================================================================
 
+    /** The tower's main loop: sleep, read new calls, give out the runway, tell the rest to wait. */
     @Override
     public void run() {
         Log.say("ATC: Tower is open. This airport has 1 runway, " + gates.length
@@ -277,6 +286,7 @@ public class AirTrafficControl implements Runnable {
         return aircraftOnGround < SimConfig.GROUND_CAPACITY && findFreeGate() != null;
     }
 
+    /** Returns the first free gate, or null if every gate is taken. */
     private Gate findFreeGate() {
         for (Gate gate : gates) {
             if (gate.isFree()) {
@@ -286,6 +296,7 @@ public class AirTrafficControl implements Runnable {
         return null;
     }
 
+    /** Reserves the runway, a ground space and a gate for this plane, then wakes it. */
     private void grantLanding(Request request) {
         Gate gate = findFreeGate();                   // canAcceptLanding() has checked there is one
         gate.assign(request.plane);
@@ -304,6 +315,7 @@ public class AirTrafficControl implements Runnable {
         notifyAll();                                  // the main thread may be in awaitAirportFull()
     }
 
+    /** Reserves the runway and wakes the plane. It already holds a ground space and needs no gate. */
     private void grantTakeoff(Request request) {
         clearedForRunway = request.plane;
 
@@ -314,6 +326,7 @@ public class AirTrafficControl implements Runnable {
         request.grant(null);
     }
 
+    /** Tells a plane why it must wait. The plane stays blocked on its Request until it is cleared. */
     private void tellToHold(Request request) {
         if (request.kind == Kind.TAKEOFF) {
             Log.say("ATC: " + request.plane + ", please wait before the runway. "
@@ -324,6 +337,7 @@ public class AirTrafficControl implements Runnable {
                 + ". Keep circling, you are number " + (landingQueue.indexOf(request) + 1) + " in line.");
     }
 
+    /** Picks the reason given in a denied message. */
     private String reasonCannotLand(Request request) {
         if (aircraftOnGround == SimConfig.GROUND_CAPACITY) {
             return "the airport is full (" + SimConfig.GROUND_CAPACITY + "/" + SimConfig.GROUND_CAPACITY
@@ -342,6 +356,7 @@ public class AirTrafficControl implements Runnable {
     // End of simulation: sanity checks + statistics (printed by the ATC thread)
     // ==================================================================
 
+    /** Prints the results for the brief. It takes the monitor because the fields it reads are guarded by it. */
     private void printEndOfDayReport() {
         synchronized (this) {
             List<FlightRecord> flights = stats.getFlights();
@@ -416,15 +431,18 @@ public class AirTrafficControl implements Runnable {
         }
     }
 
+    /** Prints one sanity check as PASS or FAIL and returns the result. */
     private boolean check(boolean ok, String description) {
         Log.say("ATC: [" + (ok ? "PASS" : "FAIL") + "] " + description);
         return ok;
     }
 
+    /** Prints one statistic as an aligned "label : value" line. */
     private void stat(String label, String value) {
         Log.say(String.format(Locale.ROOT, "ATC: %-24s: %s", label, value));
     }
 
+    /** Prints the minimum, average and maximum wait, for landings or for take-offs. */
     private void reportWaitingTimes(String label, List<FlightRecord> flights, boolean landing) {
         if (flights.isEmpty()) {
             return;

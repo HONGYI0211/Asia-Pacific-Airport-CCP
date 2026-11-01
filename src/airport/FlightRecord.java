@@ -10,11 +10,11 @@ public final class FlightRecord {
     public final String planeName;
     public final boolean emergency;
     public final String gateName;
-    public final long landingWaitMillis;
-    public final long takeoffWaitMillis;
+    public final long landingWaitMillis;    // landing request to approval
+    public final long takeoffWaitMillis;    // take-off request to approval
     public final int passengersDisembarked;
     public final int passengersBoarded;
-    public final long timeOnGroundMillis;
+    public final long timeOnGroundMillis;   // touchdown until airborne
 
     public FlightRecord(String planeName, boolean emergency, String gateName,
                         long landingWaitMillis, long takeoffWaitMillis,

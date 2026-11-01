@@ -16,6 +16,7 @@ public class GroundCrew implements Runnable {
         this.gate = gate;
     }
 
+    /** Runs on the crew thread: cleans the cabin, then loads supplies. */
     @Override
     public void run() {
         String who = gate + " Crew";
