@@ -37,15 +37,26 @@ public class Statistics {
         refuelsCompleted.incrementAndGet();
     }
 
+    /**
+     * Atomically raises "max" to "value" if value is higher, without any lock.
+     * compareAndSet fails if another thread changed max first, so we read it and try again.
+     */
+    public static void recordPeak(AtomicInteger max, int value) {
+        int current = max.get();
+        while (value > current && !max.compareAndSet(current, value)) {
+            current = max.get();
+        }
+    }
+
     /** Called by a plane thread when it touches down on the runway. */
     public void planeEnteredGround() {
         int now = planesOnGround.incrementAndGet();
-        maxPlanesOnGround.accumulateAndGet(now, Math::max);
+        recordPeak(maxPlanesOnGround, now);
     }
 
     /** Called by a plane thread once it is airborne again. */
     public void planeLeftGround() {
-        planesOnGround.decrementAndGet();
+        planesOnGround.addAndGet(-1);
     }
 
     public synchronized void recordFlight(FlightRecord record) {

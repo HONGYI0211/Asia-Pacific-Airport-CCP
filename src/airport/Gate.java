@@ -14,7 +14,6 @@ package airport;
  */
 public class Gate {
 
-    private final int number;
     private final String name;
 
     private Plane assignedPlane = null;   // reserved by the ATC when landing is granted
@@ -22,7 +21,6 @@ public class Gate {
     private int planesServed = 0;
 
     public Gate(int number) {
-        this.number = number;
         this.name = "Gate-" + number;
     }
 
@@ -62,10 +60,6 @@ public class Gate {
 
     public synchronized int getPlanesServed() {
         return planesServed;
-    }
-
-    public int getNumber() {
-        return number;
     }
 
     @Override
