@@ -12,7 +12,6 @@ package airport;
  */
 public class Plane implements Runnable {
 
-    private final int id;
     private final String name;
     private final boolean fuelEmergency;
     private final int passengersOnArrival;
@@ -32,7 +31,6 @@ public class Plane implements Runnable {
 
     public Plane(int id, int fuelLevel, int passengersOnArrival,
                  AirTrafficControl atc, Runway runway, RefuelTruck refuelTruck, Statistics stats) {
-        this.id = id;
         this.name = "Plane-" + id;
         this.fuelLevel = fuelLevel;
         this.fuelEmergency = fuelLevel <= SimConfig.LOW_FUEL_THRESHOLD;
@@ -72,13 +70,13 @@ public class Plane implements Runnable {
         landingWait = Log.elapsedMillis() - askedAt;
 
         Log.say(name + ": Landing on the runway.");
-        runway.enter(this);
+        runway.enter();
         stats.planeEnteredGround();
         touchdownTime = Log.elapsedMillis();
         Thread.sleep(SimConfig.LANDING_TIME);
 
         Log.say(name + ": Landed. Vacating the runway.");
-        atc.reportRunwayVacated(this);                // hands the runway back to the ATC
+        atc.reportRunwayVacated();                    // hands the runway back to the ATC
 
         Log.say(name + ": Coasting to " + gate + ".");
         Thread.sleep(SimConfig.COAST_TIME);
@@ -124,7 +122,7 @@ public class Plane implements Runnable {
         Log.say(name + ": Undocking from " + gate + ".");
         Thread.sleep(SimConfig.UNDOCKING_TIME);
         gate.undock(this);
-        atc.reportGateReleased(this, gate);
+        atc.reportGateReleased();
 
         Log.say(name + ": Coasting to the runway.");
         Thread.sleep(SimConfig.COAST_TIME);
@@ -135,7 +133,7 @@ public class Plane implements Runnable {
         takeoffWait = Log.elapsedMillis() - askedAt;
 
         Log.say(name + ": Taking off.");
-        runway.enter(this);
+        runway.enter();
         Thread.sleep(SimConfig.TAKEOFF_TIME);
         stats.planeLeftGround();
         Log.say(name + ": Airborne. Leaving Asia Pacific Airport. Goodbye!");
@@ -143,16 +141,12 @@ public class Plane implements Runnable {
         stats.recordFlight(new FlightRecord(name, fuelEmergency, gate.toString(),
                 landingWait, takeoffWait, passengersOnArrival, passengersOnDeparture,
                 Log.elapsedMillis() - touchdownTime));
-        atc.reportDeparted(this);                      // frees the runway and our ground slot
+        atc.reportDeparted();                          // frees the runway and our ground slot
     }
 
     // ------------------------------------------------------------------
     // Read-only accessors (immutable data - safe to call from any thread)
     // ------------------------------------------------------------------
-
-    public int getId() {
-        return id;
-    }
 
     public String getName() {
         return name;

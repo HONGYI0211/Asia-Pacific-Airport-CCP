@@ -12,7 +12,7 @@ javac -d out src/airport/*.java
 java -cp out airport.AirportSimulation
 ```
 
-A run takes about 30 seconds (the limit is 60). Every log line shows the elapsed time and the
+A run takes 30–35 seconds (the limit is 60). Every log line shows the elapsed time and the
 **thread that printed it**, so you can see that no thread acts for another:
 
 ```
@@ -35,19 +35,20 @@ A run takes about 30 seconds (the limit is 60). Every log line shows the elapsed
 
 | Requirement | Where | Java facility |
 |---|---|---|
-| 1 runway for landing and take-off | `Runway` | Binary `Semaphore(1)` taken by the ATC, released by the plane |
-| Max 3 aircraft on the grounds incl. runway | `AirTrafficControl.groundSlots` | Counting `Semaphore(3)` |
+| 1 runway for landing and take-off | `Runway` | Binary `Semaphore(1)`: the plane calls `acquire()` to enter and `release()` to leave |
+| Max 3 aircraft on the grounds incl. runway | `AirTrafficControl.groundSlots` | Counting `Semaphore(3)`, held by each plane from landing to take-off |
 | No waiting area on the ground | `AirTrafficControl.canAcceptLanding()` | A plane is only cleared to land once a gate is reserved for it |
-| Planes ask permission, ATC answers | `AirTrafficControl.requestLanding/requestTakeoff` | `ReentrantLock` + one `Condition` per request |
+| Planes ask permission, ATC answers | `AirTrafficControl.requestLanding/requestTakeoff` | `synchronized` monitor; each plane does `wait()` on its own `Request` and the ATC wakes it with `notify()` |
 | Each step takes time | `Plane`, `SimConfig` | `Thread.sleep` |
 | Passengers, cleaning/resupply and refuelling run at the same time | `Plane.turnaroundAtGate()` | Separate threads + `Thread.join()` |
 | 1 refuel truck, one plane at a time, on request | `RefuelTruck` | Producer/consumer monitor: `synchronized`, `wait()`, `notifyAll()` |
-| Congested scenario + emergency landing | `AirTrafficControl.enqueue()`, `SimConfig.EMERGENCY_PLANE_ID` | Plane-6 has 5% fuel and is put ahead of the circling planes (ordering done by hand: `PriorityBlockingQueue` is not allowed) |
+| Congested scenario + emergency landing | `AirTrafficControl.awaitAirportFull()`, `AirTrafficControl.enqueue()`, `SimConfig.EMERGENCY_PLANE_ID` | Plane-6 has 5% fuel, arrives once the airport is full and is put ahead of the circling planes (ordering done by hand: `PriorityBlockingQueue` is not allowed) |
 | Gates never double-booked | `Gate` | `synchronized` check-then-act; throws on collision |
-| Sanity checks + statistics | `AirTrafficControl.printEndOfDayReport()` | `AtomicInteger` counters, `synchronized` flight list |
+| Sanity checks + statistics | `AirTrafficControl.printEndOfDayReport()` | `AtomicInteger` counters with `compareAndSet`, `synchronized` flight list |
 
 The restricted libraries (`ExecutorService`, `ForkJoinPool`, `CompletableFuture`, parallel
-streams, `Timer`, `PriorityBlockingQueue`) are not used.
+streams, `Timer`, `PriorityBlockingQueue`) are not used. Every concurrency feature used
+appears in the class tutorial examples.
 
 ## Assumptions
 
@@ -55,10 +56,12 @@ streams, `Timer`, `PriorityBlockingQueue`) are not used.
   grounds. A plane holds its ground slot from landing clearance until it is airborne. It holds
   its gate from landing clearance until it undocks.
 - **Congested scenario.** The brief's congested scenario mentions "2 gates", but the airport
-  layout has 3 gates, so it is read as "all gates occupied". Plane-1 to Plane-3 fill the gates,
-  Plane-4 and Plane-5 circle, and Plane-6 arrives with 5% fuel. The timings guarantee that the
-  airport is still full (3/3) when Plane-6 arrives: the last arrival is at most 10 s after the
-  first, and a plane needs at least 11 s from landing clearance to take-off.
+  layout has 3 gates, so it is read as "all gates occupied". The first three planes fill the
+  gates, the next two circle, and Plane-6 arrives with 5% fuel. Plane-6 is not started until
+  three landings have been cleared, so in the rare runs where the first five planes arrive close
+  together its arrival gap can run slightly over 2 s. The airport is still full (3/3) when it
+  arrives: the last arrival is at most 10 s after the first, and a plane needs at least 11 s from
+  landing clearance to take-off.
 - **Runway priority.** Emergency landing first, then take-offs (each take-off frees a slot for
   the circling planes), then normal landings in arrival order.
 - **Ground services.** Passengers, cleaning/resupply and refuelling start together when the plane

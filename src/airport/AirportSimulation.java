@@ -43,6 +43,11 @@ public class AirportSimulation {
         // ---- Planes arrive every 0 - 2 seconds ----
         List<Thread> planeThreads = new ArrayList<Thread>();
         for (int id = 1; id <= SimConfig.TOTAL_PLANES; id++) {
+            // Congested scenario: the emergency plane arrives once the airport is full.
+            if (id == SimConfig.EMERGENCY_PLANE_ID) {
+                atc.awaitAirportFull();
+            }
+
             int fuel = (id == SimConfig.EMERGENCY_PLANE_ID)
                     ? SimConfig.EMERGENCY_FUEL_PERCENT
                     : SimConfig.randomBetween(SimConfig.MIN_NORMAL_FUEL_PERCENT, SimConfig.MAX_NORMAL_FUEL_PERCENT);

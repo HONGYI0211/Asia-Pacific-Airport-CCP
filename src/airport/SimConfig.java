@@ -40,9 +40,10 @@ public final class SimConfig {
     public static final int MAX_ARRIVAL_GAP = 2000;
 
     /**
-     * Plane-6 arrives with a fuel shortage. By the time it arrives the 3 gates are
-     * taken by Plane-1..3 and Plane-4/5 are already circling, which reproduces the
-     * congested scenario from the brief.
+     * Plane-6 arrives with a fuel shortage. AirportSimulation does not start it until
+     * the ATC has cleared 3 planes, so the 3 gates are always taken and the other two
+     * planes are circling when it arrives, which reproduces the congested scenario from
+     * the brief. Must be higher than GROUND_CAPACITY, or that wait would never end.
      */
     public static final int EMERGENCY_PLANE_ID = 6;
     public static final int EMERGENCY_FUEL_PERCENT = 5;
@@ -61,8 +62,12 @@ public final class SimConfig {
     public static final int UNDOCKING_TIME = 500;
     public static final int TAKEOFF_TIME = 1500;
 
-    /** Time for one passenger to walk off / onto the plane. */
-    public static final int TIME_PER_PASSENGER = 50;
+    /**
+     * Time for one passenger to walk off / onto the plane. Long enough that the
+     * passengers of Plane-1 are still moving when the third plane docks, so passengers
+     * are active at all 3 gates at the same time.
+     */
+    public static final int TIME_PER_PASSENGER = 80;
 
     public static final int CLEANING_MIN_TIME = 2000;
     public static final int CLEANING_MAX_TIME = 2500;

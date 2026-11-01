@@ -5,27 +5,29 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The Air Traffic Control tower, running on its own thread named "ATC".
  *
- * How planes talk to the tower (a monitor built with ReentrantLock + Condition):
+ * How planes talk to the tower (a monitor built with synchronized, wait() and notify()):
  *   1. A plane thread calls requestLanding()/requestTakeoff(). This puts a Request
- *      in the "incoming" radio queue, wakes the tower (towerWakeUp.signal()) and
- *      then makes the plane wait on its OWN condition (request.answered).
+ *      in the "incoming" radio queue, wakes the tower (notifyAll()) and then makes
+ *      the plane wait on its OWN Request object.
  *   2. The ATC thread wakes up, reads the request and decides. Every ATC message
  *      is therefore printed by the ATC thread, never by a plane thread.
- *   3. When the ATC grants permission it signals exactly that plane's condition.
+ *   3. When the ATC grants permission it notifies exactly that plane's Request.
  *
  * Resources the tower hands out:
- *   - the runway         : Runway (binary semaphore, 1 aircraft at a time)
- *   - ground capacity    : groundSlots (counting semaphore, 3 permits)
+ *   - the runway         : clearedForRunway (1 plane at a time)
+ *   - ground capacity    : aircraftOnGround (3 aircraft at most)
  *   - a gate             : Gate.assign()
  * A plane is only cleared to land if the runway, a ground slot AND a gate are all
  * free, because there is no waiting area on the ground.
+ *
+ * The tower decides with plain counters because it must never block. The plane
+ * threads then take the real permits with Semaphore.acquire() (Runway and
+ * groundSlots). The tower's decision means these calls do not have to wait, and if
+ * the tower ever made a mistake the semaphore would still hold the plane back.
  *
  * Priority on the runway:
  *   1. an emergency (low fuel) landing
@@ -36,34 +38,63 @@ public class AirTrafficControl implements Runnable {
 
     private enum Kind { LANDING, TAKEOFF }
 
-    /** One radio call from a plane. The plane thread waits on {@code answered}. */
-    private final class Request {
+    /** One radio call from a plane. The plane thread waits on this object until the tower answers. */
+    private static final class Request {
         final Plane plane;
         final Kind kind;
         final long requestedAt = Log.elapsedMillis();
-        final Condition answered = lock.newCondition();
-        boolean granted = false;    // guarded by lock
-        Gate gate = null;           // guarded by lock
+        private boolean granted = false;    // guarded by this Request's monitor
+        private Gate gate = null;           // guarded by this Request's monitor
 
         Request(Plane plane, Kind kind) {
             this.plane = plane;
             this.kind = kind;
         }
+
+        /** Called by the ATC thread. Only one plane waits here, so notify() wakes exactly that plane. */
+        synchronized void grant(Gate gate) {
+            this.gate = gate;
+            granted = true;
+            notify();
+        }
+
+        synchronized boolean isGranted() {
+            return granted;
+        }
+
+        /** Called by the plane thread; blocks until the tower has answered. */
+        synchronized void awaitGrant() throws InterruptedException {
+            while (!granted) {       // loop guards against spurious wake-ups
+                wait();
+            }
+        }
+
+        /** Same as awaitGrant(), but the circling pilot reports in now and then. Returns the gate. */
+        synchronized Gate awaitLandingClearance() throws InterruptedException {
+            while (!granted) {
+                // wait(ms) releases this object's monitor. Only the tower notifies this
+                // object, so waking up without clearance means the time simply ran out.
+                wait(SimConfig.HOLDING_REPORT_INTERVAL);
+                if (!granted) {
+                    Log.say(plane + ": Still circling in the holding pattern, waiting for landing clearance...");
+                }
+            }
+            return gate;
+        }
     }
 
-    // fair = true: threads get the lock in the order they asked for it
-    private final ReentrantLock lock = new ReentrantLock(true);
-    private final Condition towerWakeUp = lock.newCondition();
-
-    // Everything below is guarded by "lock".
+    // Everything below is guarded by this object's monitor (synchronized).
     private final LinkedList<Request> incoming = new LinkedList<Request>();     // radio calls not yet answered
     private final LinkedList<Request> landingQueue = new LinkedList<Request>(); // planes circling (holding pattern)
     private final LinkedList<Request> takeoffQueue = new LinkedList<Request>(); // planes holding short of the runway
+    private Plane clearedForRunway = null;   // the plane allowed on the runway right now
+    private int aircraftOnGround = 0;        // cleared to land and not yet airborne
+    private int landingsCleared = 0;         // landing clearances given so far (never goes down)
     private boolean stateChanged = false;
     private boolean shutdownRequested = false;
 
-    /** Max 3 aircraft on the airport grounds, including the runway. */
-    private final Semaphore groundSlots = new Semaphore(SimConfig.GROUND_CAPACITY, true);
+    /** Max 3 aircraft on the airport grounds, including the runway. Each plane holds one permit. */
+    private final Semaphore groundSlots = new Semaphore(SimConfig.GROUND_CAPACITY);
 
     private final Runway runway;
     private final Gate[] gates;
@@ -86,91 +117,69 @@ public class AirTrafficControl implements Runnable {
      * holding pattern) until the ATC thread clears it. Returns the assigned gate.
      */
     public Gate requestLanding(Plane plane) throws InterruptedException {
-        lock.lock();
-        try {
-            Request request = new Request(plane, Kind.LANDING);
-            incoming.addLast(request);
-            towerWakeUp.signal();
-
-            while (!request.granted) {
-                // Timed wait so the pilot can report that it is still circling.
-                // await() releases the lock while waiting, so the tower can work.
-                boolean signalled = request.answered.await(SimConfig.HOLDING_REPORT_INTERVAL, TimeUnit.MILLISECONDS);
-                if (!signalled && !request.granted) {
-                    Log.say(plane + ": Still circling in the holding pattern, waiting for landing clearance...");
-                }
-            }
-            return request.gate;
-        } finally {
-            lock.unlock();
-        }
+        Request request = new Request(plane, Kind.LANDING);
+        radioCall(request);
+        // The plane holds no lock on the tower while circling, so the tower can keep working.
+        Gate gate = request.awaitLandingClearance();
+        groundSlots.acquire();                        // the plane takes its ground slot
+        return gate;
     }
 
     /** Radio call: "requesting take-off". Blocks until the runway is cleared for this plane. */
     public void requestTakeoff(Plane plane) throws InterruptedException {
-        lock.lock();
-        try {
-            Request request = new Request(plane, Kind.TAKEOFF);
-            incoming.addLast(request);
-            towerWakeUp.signal();
+        Request request = new Request(plane, Kind.TAKEOFF);
+        radioCall(request);
+        request.awaitGrant();
+    }
 
-            while (!request.granted) {
-                request.answered.await();
-            }
-        } finally {
-            lock.unlock();
-        }
+    private synchronized void radioCall(Request request) {
+        incoming.addLast(request);
+        notifyAll();
     }
 
     /** The plane has landed and turned off the runway. */
-    public void reportRunwayVacated(Plane plane) {
-        lock.lock();
-        try {
-            runway.leave(plane);
-            stateChanged = true;
-            towerWakeUp.signal();
-        } finally {
-            lock.unlock();
-        }
+    public synchronized void reportRunwayVacated() {
+        runway.leave();
+        clearedForRunway = null;
+        stateChanged = true;
+        notifyAll();
     }
 
     /** The plane has pushed back from its gate. */
-    public void reportGateReleased(Plane plane, Gate gate) {
-        lock.lock();
-        try {
-            stateChanged = true;
-            towerWakeUp.signal();
-        } finally {
-            lock.unlock();
-        }
+    public synchronized void reportGateReleased() {
+        stateChanged = true;
+        notifyAll();
     }
 
     /** The plane is airborne: it gives back the runway and its ground slot. */
-    public void reportDeparted(Plane plane) {
-        lock.lock();
-        try {
-            runway.leave(plane);
-            groundSlots.release();
-            stateChanged = true;
-            towerWakeUp.signal();
-        } finally {
-            lock.unlock();
-        }
+    public synchronized void reportDeparted() {
+        runway.leave();
+        groundSlots.release();
+        clearedForRunway = null;
+        aircraftOnGround--;
+        stateChanged = true;
+        notifyAll();
     }
 
     // ==================================================================
     // Called by the MAIN thread
     // ==================================================================
 
-    /** All planes have gone - tell the tower to run its end-of-day report and stop. */
-    public void shutdown() {
-        lock.lock();
-        try {
-            shutdownRequested = true;
-            towerWakeUp.signal();
-        } finally {
-            lock.unlock();
+    /**
+     * Blocks until the first planes have filled the airport, so that the emergency plane
+     * always arrives in the congested scenario. landingsCleared never goes down, so this
+     * wait cannot miss the moment and hang.
+     */
+    public synchronized void awaitAirportFull() throws InterruptedException {
+        while (landingsCleared < SimConfig.GROUND_CAPACITY) {
+            wait();
         }
+    }
+
+    /** All planes have gone - tell the tower to run its end-of-day report and stop. */
+    public synchronized void shutdown() {
+        shutdownRequested = true;
+        notifyAll();
     }
 
     // ==================================================================
@@ -181,40 +190,39 @@ public class AirTrafficControl implements Runnable {
     public void run() {
         Log.say("ATC: Asia Pacific Airport tower online. 1 runway, " + gates.length
                 + " gates, max " + SimConfig.GROUND_CAPACITY + " aircraft on the ground.");
-        lock.lock();
         try {
-            while (true) {
-                // Sleep until there is a new radio call or something on the ground changed.
-                while (incoming.isEmpty() && !stateChanged && !shutdownRequested) {
-                    towerWakeUp.await();
-                }
-                if (shutdownRequested && incoming.isEmpty()) {
-                    break;
-                }
-                stateChanged = false;
+            synchronized (this) {
+                while (true) {
+                    // Sleep until there is a new radio call or something on the ground changed.
+                    while (incoming.isEmpty() && !stateChanged && !shutdownRequested) {
+                        wait();                       // releases the monitor so planes can call in
+                    }
+                    if (shutdownRequested && incoming.isEmpty()) {
+                        break;
+                    }
+                    stateChanged = false;
 
-                // 1. Read every new radio call and put it in the right queue.
-                List<Request> newCalls = new ArrayList<Request>();
-                while (!incoming.isEmpty()) {
-                    Request request = incoming.removeFirst();
-                    enqueue(request);
-                    newCalls.add(request);
-                }
+                    // 1. Read every new radio call and put it in the right queue.
+                    List<Request> newCalls = new ArrayList<Request>();
+                    while (!incoming.isEmpty()) {
+                        Request request = incoming.removeFirst();
+                        enqueue(request);
+                        newCalls.add(request);
+                    }
 
-                // 2. Give the runway to the most important waiting plane (if it is free).
-                dispatchRunway();
+                    // 2. Give the runway to the most important waiting plane (if it is free).
+                    dispatchRunway();
 
-                // 3. Anyone who called in just now and did not get the runway is told to wait.
-                for (Request request : newCalls) {
-                    if (!request.granted) {
-                        tellToHold(request);
+                    // 3. Anyone who called in just now and did not get the runway is told to wait.
+                    for (Request request : newCalls) {
+                        if (!request.isGranted()) {
+                            tellToHold(request);
+                        }
                     }
                 }
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        } finally {
-            lock.unlock();
         }
         printEndOfDayReport();
     }
@@ -231,7 +239,7 @@ public class AirTrafficControl implements Runnable {
         }
 
         // Emergency: insert in front of every normal plane (but behind earlier emergencies).
-        // PriorityBlockingQueue is not allowed, so the ordering is done by hand under the lock.
+        // PriorityBlockingQueue is not allowed, so the ordering is done by hand inside the monitor.
         int position = 0;
         while (position < landingQueue.size() && landingQueue.get(position).plane.isFuelEmergency()) {
             position++;
@@ -249,7 +257,7 @@ public class AirTrafficControl implements Runnable {
 
     /** Clears at most one plane for the runway, following the priority rules. */
     private void dispatchRunway() {
-        if (!runway.isFree()) {
+        if (clearedForRunway != null) {
             return;                                   // only one aircraft on the runway at a time
         }
         Request firstLanding = landingQueue.peekFirst();
@@ -266,7 +274,7 @@ public class AirTrafficControl implements Runnable {
 
     /** There is no waiting area on the ground, so we need a free ground slot AND a free gate. */
     private boolean canAcceptLanding() {
-        return groundSlots.availablePermits() > 0 && findFreeGate() != null;
+        return aircraftOnGround < SimConfig.GROUND_CAPACITY && findFreeGate() != null;
     }
 
     private Gate findFreeGate() {
@@ -279,43 +287,37 @@ public class AirTrafficControl implements Runnable {
     }
 
     private void grantLanding(Request request) {
-        Gate gate = findFreeGate();
-        // The ATC thread is the only one that takes runway/ground permits and we have just
-        // checked they are available, so these calls cannot fail. If they ever did, the
-        // airport would be unsafe, so stop immediately.
-        if (gate == null || !groundSlots.tryAcquire() || !runway.tryClear(request.plane)) {
-            throw new IllegalStateException("ATC bookkeeping error while clearing " + request.plane);
-        }
+        Gate gate = findFreeGate();                   // canAcceptLanding() has checked there is one
         gate.assign(request.plane);
+        clearedForRunway = request.plane;
+        aircraftOnGround++;
+        landingsCleared++;
 
         long waited = Log.elapsedMillis() - request.requestedAt;
         String type = request.plane.isFuelEmergency() ? "EMERGENCY landing" : "Landing";
         Log.say("ATC: " + type + " permission GRANTED for " + request.plane
                 + " (waited " + Log.seconds(waited) + "). Runway is clear.");
         Log.say("ATC: " + gate + " assigned to " + request.plane + ". Aircraft on the ground: "
-                + aircraftOnGround() + "/" + SimConfig.GROUND_CAPACITY + ".");
+                + aircraftOnGround + "/" + SimConfig.GROUND_CAPACITY + ".");
 
-        request.gate = gate;
-        request.granted = true;
-        request.answered.signal();                    // wake exactly this plane
+        request.grant(gate);                          // wake exactly this plane
+        notifyAll();                                  // the main thread may be in awaitAirportFull()
     }
 
     private void grantTakeoff(Request request) {
-        if (!runway.tryClear(request.plane)) {
-            throw new IllegalStateException("ATC bookkeeping error while clearing " + request.plane);
-        }
+        clearedForRunway = request.plane;
+
         long waited = Log.elapsedMillis() - request.requestedAt;
         Log.say("ATC: Take-off GRANTED for " + request.plane + " (waited " + Log.seconds(waited)
                 + "). Runway is free.");
 
-        request.granted = true;
-        request.answered.signal();
+        request.grant(null);
     }
 
     private void tellToHold(Request request) {
         if (request.kind == Kind.TAKEOFF) {
             Log.say("ATC: " + request.plane + ", hold short of the runway - runway in use by "
-                    + runway.getClearedPlane() + ".");
+                    + clearedForRunway + ".");
             return;
         }
         Log.say("ATC: Landing permission DENIED for " + request.plane + " - " + reasonCannotLand(request)
@@ -323,12 +325,12 @@ public class AirTrafficControl implements Runnable {
     }
 
     private String reasonCannotLand(Request request) {
-        if (groundSlots.availablePermits() == 0) {
+        if (aircraftOnGround == SimConfig.GROUND_CAPACITY) {
             return "airport full (" + SimConfig.GROUND_CAPACITY + "/" + SimConfig.GROUND_CAPACITY
                     + " aircraft on the ground)";
         }
-        if (!runway.isFree()) {
-            return "runway in use by " + runway.getClearedPlane();
+        if (clearedForRunway != null) {
+            return "runway in use by " + clearedForRunway;
         }
         if (landingQueue.indexOf(request) > 0) {
             return "other aircraft are ahead in the landing queue";
@@ -336,17 +338,12 @@ public class AirTrafficControl implements Runnable {
         return "departing traffic has priority";
     }
 
-    private int aircraftOnGround() {
-        return SimConfig.GROUND_CAPACITY - groundSlots.availablePermits();
-    }
-
     // ==================================================================
     // End of simulation: sanity checks + statistics (printed by the ATC thread)
     // ==================================================================
 
     private void printEndOfDayReport() {
-        lock.lock();
-        try {
+        synchronized (this) {
             List<FlightRecord> flights = stats.getFlights();
             int served = flights.size();
 
@@ -367,10 +364,10 @@ public class AirTrafficControl implements Runnable {
             for (Gate gate : gates) {
                 allOk &= check(gate.isFree(), gate + " is empty.");
             }
-            allOk &= check(runway.isFree() && runway.getAircraftOnRunway() == 0, "Runway is clear.");
-            allOk &= check(groundSlots.availablePermits() == SimConfig.GROUND_CAPACITY && stats.getPlanesOnGround() == 0,
-                    "No aircraft left on the airport grounds (" + groundSlots.availablePermits() + "/"
-                            + SimConfig.GROUND_CAPACITY + " ground slots free).");
+            allOk &= check(clearedForRunway == null && runway.getAircraftOnRunway() == 0, "Runway is clear.");
+            allOk &= check(aircraftOnGround == 0 && stats.getPlanesOnGround() == 0,
+                    "No aircraft left on the airport grounds (" + (SimConfig.GROUND_CAPACITY - aircraftOnGround)
+                            + "/" + SimConfig.GROUND_CAPACITY + " ground slots free).");
             allOk &= check(incoming.isEmpty() && landingQueue.isEmpty() && takeoffQueue.isEmpty(),
                     "Landing and take-off queues are empty.");
             allOk &= check(!refuelTruck.hasPendingRequests(), "Refuel truck has no pending requests.");
@@ -415,8 +412,6 @@ public class AirTrafficControl implements Runnable {
             }
             Log.say("ATC: ===========================================================");
             Log.say("ATC: Tower closing. Good night!");
-        } finally {
-            lock.unlock();
         }
     }
 
