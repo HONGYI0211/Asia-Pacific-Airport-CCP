@@ -20,13 +20,13 @@ public class GroundCrew implements Runnable {
     public void run() {
         String who = gate + " Crew";
         try {
-            Log.say(who + ": Cleaning the cabin of " + plane + ".");
+            Log.say(who + ": Cleaning inside " + plane + ".");
             Thread.sleep(SimConfig.randomBetween(SimConfig.CLEANING_MIN_TIME, SimConfig.CLEANING_MAX_TIME));
 
-            Log.say(who + ": Refilling supplies (food, water, amenities) on " + plane + ".");
+            Log.say(who + ": Loading food, water and supplies onto " + plane + ".");
             Thread.sleep(SimConfig.randomBetween(SimConfig.RESUPPLY_MIN_TIME, SimConfig.RESUPPLY_MAX_TIME));
 
-            Log.say(who + ": " + plane + " is cleaned and restocked.");
+            Log.say(who + ": " + plane + " is clean and fully stocked.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

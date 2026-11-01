@@ -47,7 +47,7 @@ public final class SimConfig {
      */
     public static final int EMERGENCY_PLANE_ID = 6;
     public static final int EMERGENCY_FUEL_PERCENT = 5;
-    /** A plane at or below this fuel level declares an emergency (MAYDAY). */
+    /** A plane at or below this fuel level declares an emergency. */
     public static final int LOW_FUEL_THRESHOLD = 10;
     public static final int MIN_NORMAL_FUEL_PERCENT = 30;
     public static final int MAX_NORMAL_FUEL_PERCENT = 60;

@@ -31,18 +31,18 @@ public class PassengerGroup implements Runnable {
     public void run() {
         String who = plane + "'s Passengers";
         try {
-            Log.say(who + ": Disembarking out of " + plane + " at " + gate
-                    + " (" + arrivingPassengers + " passengers).");
+            Log.say(who + ": " + arrivingPassengers + " passengers are getting off " + plane
+                    + " at " + gate + ".");
             Thread.sleep(arrivingPassengers * SimConfig.TIME_PER_PASSENGER);
             stats.addPassengersDisembarked(arrivingPassengers);
-            Log.say(who + ": All " + arrivingPassengers + " passengers have left " + plane + ".");
+            Log.say(who + ": Everyone is off " + plane + " (" + arrivingPassengers + " passengers).");
 
             int departing = SimConfig.randomBetween(SimConfig.MIN_PASSENGERS, SimConfig.MAX_PASSENGERS);
-            Log.say(who + ": " + departing + " new passengers embarking onto " + plane + " at " + gate + ".");
+            Log.say(who + ": " + departing + " new passengers are boarding " + plane + " at " + gate + ".");
             Thread.sleep(departing * SimConfig.TIME_PER_PASSENGER);
             stats.addPassengersBoarded(departing);
             boardedPassengers = departing;
-            Log.say(who + ": Boarding complete, " + departing + " passengers on " + plane + ".");
+            Log.say(who + ": Everyone is on board " + plane + " (" + departing + " passengers).");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
